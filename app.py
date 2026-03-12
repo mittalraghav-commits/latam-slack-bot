@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from config import SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET
 from latam_client import get_modules, get_shows_from_module, get_module_shows, update_module
 from modals import build_initial_modal, build_modal_with_modules, build_modal_with_shows
-from roles import assert_authorized, invalidate_cache, UnauthorizedError
+from roles import get_allowed_languages, assert_authorized_for_language, invalidate_cache, UnauthorizedError
 from audit import post_audit_log
 
 logging.basicConfig(level=logging.INFO)
@@ -21,7 +21,7 @@ api      = FastAPI()
 loop = asyncio.new_event_loop()
 
 
-# ── 1. Slash command — role check, then open modal ────────────────────────────
+# ── 1. Slash command — check roles, open modal with only allowed languages ─────
 
 @bolt_app.command("/update-latam-module")
 def open_modal(ack, command, client):
@@ -30,7 +30,7 @@ def open_modal(ack, command, client):
     channel_id = command["channel_id"]
 
     try:
-        assert_authorized(client, user_id)
+        allowed_languages = get_allowed_languages(client, user_id)
     except UnauthorizedError:
         client.chat_postEphemeral(
             channel=channel_id,
@@ -38,27 +38,28 @@ def open_modal(ack, command, client):
             text=(
                 ":no_entry: *Access denied.*\n"
                 "You don't have permission to update LATAM modules.\n"
-                "Contact your team lead to be added to the *LATAM Editors* group."
+                "Contact your team lead to be added to the relevant *LATAM Editors* group."
             ),
         )
         return
 
-    metadata = json.dumps({"channel_id": channel_id})
+    metadata = json.dumps({"channel_id": channel_id, "allowed_languages": allowed_languages})
     client.views_open(
         trigger_id=command["trigger_id"],
-        view=build_initial_modal(private_metadata=metadata),
+        view=build_initial_modal(private_metadata=metadata, allowed_languages=allowed_languages),
     )
 
 
-# ── 2. Language selected — load modules into dropdown ─────────────────────────
+# ── 2. Language selected — load modules ────────────────────────────────────────
 
 @bolt_app.action("language_select")
 def on_language_selected(ack, body, client):
     ack()
-    language   = body["actions"][0]["selected_option"]["value"]
-    view_id    = body["view"]["id"]
-    hash_      = body["view"]["hash"]
-    metadata   = body["view"].get("private_metadata", "{}")
+    language          = body["actions"][0]["selected_option"]["value"]
+    view_id           = body["view"]["id"]
+    hash_             = body["view"]["hash"]
+    metadata          = json.loads(body["view"].get("private_metadata", "{}"))
+    allowed_languages = metadata.get("allowed_languages")
 
     modules = loop.run_until_complete(get_modules(language))
 
@@ -67,8 +68,9 @@ def on_language_selected(ack, body, client):
         hash=hash_,
         view=build_modal_with_modules(
             modules,
-            private_metadata=metadata,
+            private_metadata=json.dumps(metadata),
             selected_language=language,
+            allowed_languages=allowed_languages,
         ),
     )
 
@@ -78,10 +80,11 @@ def on_language_selected(ack, body, client):
 @bolt_app.action("module_select")
 def on_module_selected(ack, body, client):
     ack()
-    view_id  = body["view"]["id"]
-    hash_    = body["view"]["hash"]
-    metadata = body["view"].get("private_metadata", "{}")
-    values   = body["view"]["state"]["values"]
+    view_id           = body["view"]["id"]
+    hash_             = body["view"]["hash"]
+    metadata          = json.loads(body["view"].get("private_metadata", "{}"))
+    allowed_languages = metadata.get("allowed_languages")
+    values            = body["view"]["state"]["values"]
 
     language      = values["language_block"]["language_select"]["selected_option"]["value"]
     module_option = body["actions"][0]["selected_option"]
@@ -97,10 +100,11 @@ def on_module_selected(ack, body, client):
         view=build_modal_with_shows(
             modules,
             current_show_ids,
-            private_metadata=metadata,
+            private_metadata=json.dumps(metadata),
             selected_language=language,
             selected_module_id=module_id,
             selected_module_name=module_name,
+            allowed_languages=allowed_languages,
         ),
     )
 
@@ -109,8 +113,8 @@ def on_module_selected(ack, body, client):
 
 @bolt_app.view("latam_module_update")
 def on_submit(ack, body, client, view):
-    values   = view["state"]["values"]
-    metadata = json.loads(view.get("private_metadata") or "{}")
+    values     = view["state"]["values"]
+    metadata   = json.loads(view.get("private_metadata") or "{}")
     channel_id = metadata.get("channel_id")
 
     language    = values["language_block"]["language_select"]["selected_option"]["value"]
@@ -121,12 +125,12 @@ def on_submit(ack, body, client, view):
     user_id   = body["user"]["id"]
     user_name = body["user"]["name"]
 
-    # Re-check authorization on submit (defense in depth)
+    # Re-check authorization for this specific language on submit (defence in depth)
     try:
-        assert_authorized(client, user_id)
+        assert_authorized_for_language(client, user_id, language)
     except UnauthorizedError:
         ack(response_action="errors", errors={
-            "show_ids_block": "You no longer have permission to submit this update."
+            "show_ids_block": f"You don't have permission to update {language} modules."
         })
         return
 
@@ -149,13 +153,9 @@ def on_submit(ack, body, client, view):
     ack()
 
     try:
-        # Snapshot current state before the update (for the audit diff)
         previous_show_ids = loop.run_until_complete(get_module_shows(module_id))
-
-        # Apply the update
         loop.run_until_complete(update_module(language, module_id, new_show_ids))
 
-        # Post the audit log — this is the only message, no separate DM
         post_audit_log(
             client,
             channel=channel_id,
@@ -169,7 +169,6 @@ def on_submit(ack, body, client, view):
         )
 
     except Exception as e:
-        # Error is ephemeral — only the submitter sees it
         client.chat_postEphemeral(
             channel=channel_id,
             user=user_id,

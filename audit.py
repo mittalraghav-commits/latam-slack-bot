@@ -2,10 +2,10 @@ import time
 from slack_sdk import WebClient
 
 LANGUAGE_LABELS = {
-    "es": "Spanish (es)",
-    "pt": "Portuguese (pt)",
-    "de": "German (de)",
-    "fr": "French (fr)",
+    "fr":         "French (FR)",
+    "german":     "German (DE)",
+    "spanish":    "Spanish (ES)",
+    "portuguese": "Portuguese (BR)",
 }
 
 

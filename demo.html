@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LATAM Module Bot — Demo</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --slack-purple: #4A154B;
+    --slack-green:  #007a5a;
+    --slack-blue:   #1264A3;
+    --slack-red:    #E01E5A;
+    --slack-yellow: #ECB22E;
+    --bg:           #F8F8F8;
+    --sidebar-bg:   #3F0E40;
+    --sidebar-text: #CFC3CF;
+    --sidebar-active:#FFFFFF;
+    --msg-bg:       #FFFFFF;
+    --border:       #DDDDDD;
+    --text:         #1D1C1D;
+    --subtext:      #616061;
+    --modal-shadow: 0 8px 48px rgba(0,0,0,.3);
+    --radius:       6px;
+  }
+
+  body { font-family: Slack-Lato, Lato, -apple-system, system-ui, sans-serif; background: var(--bg); display:flex; height:100vh; overflow:hidden; }
+
+  /* ── Sidebar ── */
+  .sidebar { width: 220px; background: var(--sidebar-bg); color: var(--sidebar-text); display:flex; flex-direction:column; flex-shrink:0; }
+  .sidebar-header { padding: 16px; border-bottom: 1px solid rgba(255,255,255,.1); }
+  .workspace-name { color: #fff; font-weight:700; font-size:17px; }
+  .workspace-status { font-size:12px; display:flex; align-items:center; gap:5px; margin-top:2px; }
+  .status-dot { width:8px; height:8px; background:#2bac76; border-radius:50%; }
+  .sidebar-section { padding: 16px 8px 4px; font-size:12px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; color:var(--sidebar-text); }
+  .channel-item { display:flex; align-items:center; gap:8px; padding: 4px 12px; border-radius:4px; font-size:15px; cursor:pointer; color:var(--sidebar-text); }
+  .channel-item:hover { background: rgba(255,255,255,.08); color:#fff; }
+  .channel-item.active { background: var(--slack-blue); color:#fff; }
+  .channel-hash { opacity:.7; font-size:18px; }
+
+  /* ── Main ── */
+  .main { flex:1; display:flex; flex-direction:column; min-width:0; }
+  .channel-header { padding: 12px 20px; border-bottom: 1px solid var(--border); background:#fff; display:flex; align-items:center; gap:10px; }
+  .channel-header-name { font-weight:700; font-size:17px; }
+  .channel-header-desc { font-size:13px; color:var(--subtext); }
+  .messages { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:2px; }
+
+  /* ── Message ── */
+  .msg { display:flex; gap:10px; padding: 4px 8px; border-radius:4px; }
+  .msg:hover { background:#F4F4F4; }
+  .avatar { width:36px; height:36px; border-radius:4px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; color:#fff; }
+  .av-bot  { background: var(--slack-purple); }
+  .av-user { background: var(--slack-blue); }
+  .av-sys  { background: var(--slack-green); }
+  .msg-body { flex:1; min-width:0; }
+  .msg-meta { display:flex; align-items:baseline; gap:8px; margin-bottom:2px; }
+  .msg-name { font-weight:700; font-size:15px; color:var(--text); }
+  .msg-time { font-size:11px; color:var(--subtext); }
+  .msg-badge { background:#ECB22E; color:#fff; font-size:10px; font-weight:700; padding:1px 5px; border-radius:3px; }
+  .msg-text { font-size:15px; color:var(--text); line-height:1.5; }
+  .msg-text code { background:#f0f0f0; padding:1px 5px; border-radius:3px; font-family:monospace; font-size:13px; }
+  .slash-cmd { display:inline-flex; align-items:center; gap:6px; background:#F4F4F4; border:1px solid var(--border); border-radius:4px; padding:2px 8px; font-size:13px; color:var(--slack-blue); cursor:pointer; font-weight:600; }
+  .slash-cmd:hover { background:#EAF0F8; }
+
+  /* ── Input bar ── */
+  .input-bar { padding:12px 20px; border-top:1px solid var(--border); background:#fff; }
+  .input-wrap { border:1px solid var(--border); border-radius:8px; padding:8px 12px; display:flex; align-items:center; gap:8px; }
+  .input-fake { flex:1; font-size:15px; color:var(--subtext); }
+
+  /* ── Modal overlay ── */
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; z-index:100; opacity:0; pointer-events:none; transition:opacity .15s; }
+  .overlay.open { opacity:1; pointer-events:auto; }
+
+  /* ── Modal ── */
+  .modal { background:#fff; border-radius:8px; box-shadow: var(--modal-shadow); width:520px; max-height:90vh; display:flex; flex-direction:column; transform:scale(.95); transition:transform .15s; }
+  .overlay.open .modal { transform:scale(1); }
+  .modal-header { padding:20px 20px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+  .modal-title { font-weight:700; font-size:18px; }
+  .modal-close { background:none; border:none; font-size:20px; cursor:pointer; color:var(--subtext); line-height:1; padding:2px 6px; border-radius:4px; }
+  .modal-close:hover { background:#F4F4F4; color:var(--text); }
+  .modal-body { padding:20px; overflow-y:auto; display:flex; flex-direction:column; gap:20px; }
+  .modal-footer { padding:12px 20px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px; }
+
+  /* ── Form elements ── */
+  .field { display:flex; flex-direction:column; gap:6px; }
+  .field-label { font-weight:700; font-size:13px; color:var(--text); }
+  .field-hint { font-size:12px; color:var(--subtext); line-height:1.4; }
+  select, textarea, input[type=text] {
+    width:100%; padding:9px 12px; border:1px solid var(--border); border-radius:4px;
+    font-size:15px; color:var(--text); background:#fff; outline:none;
+    font-family:inherit; transition:border-color .1s;
+  }
+  select:focus, textarea:focus, input:focus { border-color:var(--slack-blue); box-shadow:0 0 0 3px rgba(18,100,163,.15); }
+  textarea { resize:vertical; min-height:90px; font-family:monospace; font-size:13px; }
+  .field-error { font-size:12px; color:var(--slack-red); font-weight:600; display:none; }
+  .field-error.show { display:block; }
+
+  /* ── Shows preview ── */
+  .shows-preview { background:#F8F8F8; border:1px solid var(--border); border-radius:4px; padding:12px; }
+  .shows-preview-title { font-size:12px; font-weight:700; color:var(--subtext); margin-bottom:8px; text-transform:uppercase; letter-spacing:.4px; }
+  .show-list { display:flex; flex-direction:column; gap:4px; max-height:160px; overflow-y:auto; }
+  .show-item { display:flex; align-items:center; gap:8px; font-size:13px; }
+  .show-rank { width:20px; color:var(--subtext); font-weight:700; text-align:right; flex-shrink:0; }
+  .show-id { font-family:monospace; color:var(--text); word-break:break-all; }
+
+  /* ── Buttons ── */
+  .btn { padding:9px 16px; border-radius:4px; font-size:15px; font-weight:700; border:none; cursor:pointer; transition:filter .1s; }
+  .btn:hover { filter:brightness(.92); }
+  .btn:disabled { opacity:.5; cursor:not-allowed; filter:none; }
+  .btn-primary { background:var(--slack-green); color:#fff; }
+  .btn-secondary { background:#fff; color:var(--text); border:1px solid var(--border); }
+  .btn-danger { background:var(--slack-red); color:#fff; }
+
+  /* ── Step indicator ── */
+  .steps { display:flex; gap:8px; padding:0 20px 16px; }
+  .step { flex:1; height:3px; border-radius:2px; background:var(--border); transition:background .2s; }
+  .step.done { background:var(--slack-green); }
+  .step.active { background:var(--slack-blue); }
+
+  /* ── Audit log block ── */
+  .audit-block { border-left:4px solid var(--slack-green); background:#F8F8F8; border-radius:0 4px 4px 0; padding:12px 16px; font-size:13px; }
+  .audit-block.error { border-color:var(--slack-red); }
+  .audit-title { font-weight:700; font-size:14px; margin-bottom:8px; }
+  .audit-row { display:flex; gap:8px; margin-bottom:4px; color:var(--subtext); }
+  .audit-key { font-weight:700; min-width:80px; color:var(--text); }
+  .audit-diff { margin-top:8px; }
+  .diff-item { font-family:monospace; font-size:12px; padding:1px 0; }
+  .diff-add { color:#007a5a; }
+  .diff-rem { color:var(--slack-red); }
+
+  /* ── Spinner ── */
+  .spinner { width:18px; height:18px; border:2.5px solid rgba(255,255,255,.4); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; display:inline-block; vertical-align:middle; }
+  .spinner-dark { border-color:rgba(0,0,0,.15); border-top-color:var(--text); }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  /* ── Toast ── */
+  .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#1D1C1D; color:#fff; padding:10px 20px; border-radius:6px; font-size:14px; font-weight:600; z-index:200; opacity:0; transition:opacity .2s; pointer-events:none; }
+  .toast.show { opacity:1; }
+
+  /* ── Separator ── */
+  .date-sep { text-align:center; font-size:12px; color:var(--subtext); display:flex; align-items:center; gap:8px; margin:8px 0; }
+  .date-sep::before, .date-sep::after { content:''; flex:1; border-top:1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="sidebar-header">
+    <div class="workspace-name">pocketfm</div>
+    <div class="workspace-status"><span class="status-dot"></span>Raghav Mittal</div>
+  </div>
+  <div class="sidebar-section">Channels</div>
+  <div class="channel-item"><span class="channel-hash">#</span>general</div>
+  <div class="channel-item"><span class="channel-hash">#</span>engineering</div>
+  <div class="channel-item active"><span class="channel-hash">#</span>latam-module-updates</div>
+  <div class="channel-item"><span class="channel-hash">#</span>data-team</div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="channel-header">
+    <div>
+      <div class="channel-header-name"># latam-module-updates</div>
+      <div class="channel-header-desc">LATAM feed module management — only authorized editors</div>
+    </div>
+  </div>
+
+  <div class="messages" id="messages">
+    <div class="date-sep">Today</div>
+
+    <!-- Bot intro message -->
+    <div class="msg">
+      <div class="avatar av-bot">LM</div>
+      <div class="msg-body">
+        <div class="msg-meta">
+          <span class="msg-name">LATAM Module Bot</span>
+          <span class="msg-badge">APP</span>
+          <span class="msg-time">9:00 AM</span>
+        </div>
+        <div class="msg-text">
+          Hello! I'm the LATAM Module Bot. Use <code>/update-latam-module</code> to update show lists for any LATAM feed module.
+          Only members of the <strong>LATAM Editors</strong> usergroup can run this command.
+        </div>
+      </div>
+    </div>
+
+    <!-- User triggering command -->
+    <div class="msg">
+      <div class="avatar av-user">RM</div>
+      <div class="msg-body">
+        <div class="msg-meta">
+          <span class="msg-name">Raghav Mittal</span>
+          <span class="msg-time">11:32 AM</span>
+        </div>
+        <div class="msg-text">
+          <span class="slash-cmd" onclick="openStep1()" title="Click to demo the bot flow">⚡ /update-latam-module</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="input-bar">
+    <div class="input-wrap">
+      <div class="input-fake">Message #latam-module-updates</div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL OVERLAY -->
+<div class="overlay" id="overlay">
+  <div class="modal" id="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">Update LATAM Module</span>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="steps">
+      <div class="step active" id="step-1"></div>
+      <div class="step" id="step-2"></div>
+      <div class="step" id="step-3"></div>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer"></div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+const NOW = () => {
+  const d = new Date();
+  const h = d.getHours(), m = String(d.getMinutes()).padStart(2,'0');
+  return `${h > 12 ? h-12 : h}:${m} ${h >= 12 ? 'PM' : 'AM'}`;
+};
+
+let state = { language: null, modules: [], moduleId: null, moduleName: null, currentShows: [] };
+
+// ── Modal helpers ──────────────────────────────────────────────────────────
+
+function openOverlay()  { document.getElementById('overlay').classList.add('open'); }
+function closeModal()   { document.getElementById('overlay').classList.remove('open'); }
+function setStep(n)     {
+  [1,2,3].forEach(i => {
+    const el = document.getElementById(`step-${i}`);
+    el.className = 'step' + (i < n ? ' done' : i === n ? ' active' : '');
+  });
+}
+
+function showToast(msg, duration=3000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+// ── Step 1 — Language selection ────────────────────────────────────────────
+
+function openStep1() {
+  state = { language: null, modules: [], moduleId: null, moduleName: null, currentShows: [] };
+  setStep(1);
+  document.getElementById('modal-title').textContent = 'Update LATAM Module';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="field">
+      <label class="field-label">Language *</label>
+      <select id="lang-select" onchange="onLanguageChange(this.value)">
+        <option value="">Select a language…</option>
+        <option value="fr">French (FR)</option>
+        <option value="german">German (DE)</option>
+        <option value="spanish">Spanish (ES)</option>
+        <option value="portuguese">Portuguese (BR)</option>
+      </select>
+      <span class="field-hint">Choose the language market to update.</span>
+    </div>
+    <div class="field" id="module-field" style="display:none">
+      <label class="field-label">Module *</label>
+      <select id="module-select" disabled onchange="onModuleChange(this)">
+        <option value="">Loading modules…</option>
+      </select>
+      <span class="field-hint" id="module-hint"></span>
+    </div>
+  `;
+  document.getElementById('modal-footer').innerHTML = `
+    <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+    <button class="btn btn-primary" id="next-btn" disabled onclick="openStep2()">Next</button>
+  `;
+  openOverlay();
+}
+
+async function onLanguageChange(lang) {
+  if (!lang) return;
+  state.language = lang;
+  state.moduleId = null;
+  const moduleField = document.getElementById('module-field');
+  const moduleSelect = document.getElementById('module-select');
+  moduleField.style.display = 'flex';
+  moduleSelect.disabled = true;
+  moduleSelect.innerHTML = '<option>Loading…</option>';
+  document.getElementById('next-btn').disabled = true;
+
+  try {
+    const res = await fetch(`/api/modules?language=${lang}`);
+    const data = await res.json();
+    state.modules = data.modules || [];
+    moduleSelect.innerHTML = '<option value="">Select a module…</option>' +
+      state.modules.map(m => `<option value="${m.module_id}">${m.module_name}</option>`).join('');
+    moduleSelect.disabled = false;
+    document.getElementById('module-hint').textContent = `${state.modules.length} module(s) available.`;
+  } catch(e) {
+    moduleSelect.innerHTML = '<option>Failed to load — check console</option>';
+    showToast('Failed to load modules: ' + e.message);
+  }
+}
+
+function onModuleChange(select) {
+  const idx = select.selectedIndex - 1;
+  if (idx < 0) { state.moduleId = null; state.moduleName = null; document.getElementById('next-btn').disabled = true; return; }
+  const m = state.modules[idx];
+  state.moduleId    = m.module_id;
+  state.moduleName  = m.module_name;
+  state.currentShows = m.show_ids || [];
+  document.getElementById('next-btn').disabled = false;
+}
+
+// ── Step 2 — Show current shows + input ───────────────────────────────────
+
+function openStep2() {
+  setStep(2);
+  document.getElementById('modal-title').textContent = `Update: ${state.moduleName}`;
+  document.getElementById('modal-body').innerHTML = `
+    <div class="shows-preview">
+      <div class="shows-preview-title">Current shows (${state.currentShows.length})</div>
+      <div class="show-list">
+        ${state.currentShows.length === 0
+          ? '<div style="color:var(--subtext);font-size:13px">No shows in this module yet.</div>'
+          : state.currentShows.map((id, i) =>
+              `<div class="show-item"><span class="show-rank">${i+1}.</span><span class="show-id">${id}</span></div>`
+            ).join('')
+        }
+      </div>
+    </div>
+    <div class="field">
+      <label class="field-label">New show_ids *</label>
+      <textarea id="show-ids-input" placeholder='["showId1", "showId2", "showId3"]'>${JSON.stringify(state.currentShows, null, 2)}</textarea>
+      <span class="field-hint">
+        Enter a JSON array of show IDs in the order you want them to appear.<br>
+        This will <strong>replace</strong> the entire current list.
+      </span>
+      <span class="field-error" id="ids-error"></span>
+    </div>
+  `;
+  document.getElementById('modal-footer').innerHTML = `
+    <button class="btn btn-secondary" onclick="openStep1()">Back</button>
+    <button class="btn btn-primary" id="submit-btn" onclick="submitUpdate()">Update Module</button>
+  `;
+}
+
+// ── Step 3 — Confirm / result ──────────────────────────────────────────────
+
+async function submitUpdate() {
+  const raw = document.getElementById('show-ids-input').value.trim();
+  const errEl = document.getElementById('ids-error');
+
+  let newShowIds;
+  try {
+    newShowIds = JSON.parse(raw);
+    if (!Array.isArray(newShowIds) || !newShowIds.every(s => typeof s === 'string')) throw new Error();
+    if (newShowIds.length === 0) throw new Error();
+    errEl.classList.remove('show');
+  } catch {
+    errEl.textContent = 'Must be a non-empty JSON array of strings. Example: ["id1", "id2"]';
+    errEl.classList.add('show');
+    return;
+  }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Updating…';
+
+  try {
+    const res = await fetch('/api/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        language: state.language,
+        module_id: state.moduleId,
+        module_name: state.moduleName,
+        show_ids: newShowIds,
+        previous_show_ids: state.currentShows,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || res.statusText);
+    }
+
+    const result = await res.json();
+    setStep(3);
+    showSuccessModal(newShowIds, result);
+    postAuditMessage(newShowIds, result);
+  } catch(e) {
+    btn.disabled = false;
+    btn.innerHTML = 'Update Module';
+    const errEl2 = document.getElementById('ids-error');
+    errEl2.textContent = 'Update failed: ' + e.message;
+    errEl2.classList.add('show');
+  }
+}
+
+function showSuccessModal(newShowIds, result) {
+  const added   = result.added   || [];
+  const removed = result.removed || [];
+  const changed = added.length + removed.length;
+
+  document.getElementById('modal-title').textContent = 'Module updated!';
+  document.getElementById('modal-body').innerHTML = `
+    <div style="text-align:center;padding:12px 0 4px">
+      <div style="font-size:48px">✅</div>
+      <div style="font-size:17px;font-weight:700;margin-top:8px">${state.moduleName}</div>
+      <div style="color:var(--subtext);font-size:14px;margin-top:4px">
+        ${newShowIds.length} shows · ${changed} change${changed!==1?'s':''}
+      </div>
+    </div>
+    <div class="audit-block">
+      <div class="audit-title">Audit summary</div>
+      <div class="audit-row"><span class="audit-key">Module</span>${state.moduleName} <code style="font-size:11px">${state.moduleId}</code></div>
+      <div class="audit-row"><span class="audit-key">Language</span>${state.language.toUpperCase()}</div>
+      <div class="audit-row"><span class="audit-key">Updated by</span>Raghav Mittal</div>
+      <div class="audit-row"><span class="audit-key">Total shows</span>${newShowIds.length}</div>
+      ${changed > 0 ? `
+      <div class="audit-diff">
+        ${added.map(id => `<div class="diff-item diff-add">+ ${id}</div>`).join('')}
+        ${removed.map(id => `<div class="diff-item diff-rem">− ${id}</div>`).join('')}
+      </div>` : '<div style="font-size:12px;color:var(--subtext);margin-top:8px">No shows added or removed — order may have changed.</div>'}
+    </div>
+  `;
+  document.getElementById('modal-footer').innerHTML = `
+    <button class="btn btn-primary" onclick="closeModal()">Done</button>
+  `;
+}
+
+function postAuditMessage(newShowIds, result) {
+  const messages = document.getElementById('messages');
+  const added   = result.added   || [];
+  const removed = result.removed || [];
+  const changed = added.length + removed.length;
+
+  // Bot audit log
+  const auditEl = document.createElement('div');
+  auditEl.className = 'msg';
+  auditEl.innerHTML = `
+    <div class="avatar av-bot">LM</div>
+    <div class="msg-body">
+      <div class="msg-meta">
+        <span class="msg-name">LATAM Module Bot</span>
+        <span class="msg-badge">APP</span>
+        <span class="msg-time">${NOW()}</span>
+      </div>
+      <div class="msg-text">
+        <div class="audit-block">
+          <div class="audit-title">🔄 Module updated by <strong>@Raghav Mittal</strong></div>
+          <div class="audit-row"><span class="audit-key">Module</span>${state.moduleName}</div>
+          <div class="audit-row"><span class="audit-key">Language</span>${state.language.toUpperCase()}</div>
+          <div class="audit-row"><span class="audit-key">Shows</span>${newShowIds.length} total${changed > 0 ? `, ${added.length} added, ${removed.length} removed` : ' (reordered)'}</div>
+          ${changed > 0 ? `<div class="audit-diff">
+            ${added.map(id => `<div class="diff-item diff-add">+ ${id}</div>`).join('')}
+            ${removed.map(id => `<div class="diff-item diff-rem">− ${id}</div>`).join('')}
+          </div>` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+  messages.appendChild(auditEl);
+  messages.scrollTop = messages.scrollHeight;
+  closeModal();
+  showToast('✅ Module updated successfully!');
+}
+</script>
+</body>
+</html>

@@ -8,6 +8,27 @@ ALL_LANGUAGES = [
     ("portuguese", "Portuguese (BR)"),
 ]
 
+# All supported locales — (locale code, display label)
+ALL_LOCALES = [
+    ("FR", "France (FR)"),
+    ("DE", "Germany (DE)"),
+    ("ES", "Spain (ES)"),
+    ("PT", "Portugal (PT)"),
+    ("BR", "Brazil (BR)"),
+    ("MX", "Mexico (MX)"),
+    ("AR", "Argentina (AR)"),
+    ("CO", "Colombia (CO)"),
+    ("CL", "Chile (CL)"),
+    ("PE", "Peru (PE)"),
+    ("EC", "Ecuador (EC)"),
+    ("BO", "Bolivia (BO)"),
+    ("PY", "Paraguay (PY)"),
+    ("UY", "Uruguay (UY)"),
+    ("VE", "Venezuela (VE)"),
+]
+
+DEFAULT_LOCALE = "MX"
+
 
 def _language_options(allowed_languages: list[str]) -> list[dict]:
     """Build Slack option blocks for only the languages the user may access."""
@@ -23,11 +44,23 @@ def _language_initial_option(language: str) -> dict:
     return {"text": {"type": "plain_text", "text": label}, "value": language}
 
 
+def _locale_options() -> list[dict]:
+    return [
+        {"text": {"type": "plain_text", "text": label}, "value": key}
+        for key, label in ALL_LOCALES
+    ]
+
+
+def _locale_initial_option(locale: str) -> dict:
+    label = next((label for key, label in ALL_LOCALES if key == locale), locale)
+    return {"text": {"type": "plain_text", "text": label}, "value": locale}
+
+
 def build_initial_modal(
     private_metadata: str = "{}",
     allowed_languages: Optional[list[str]] = None,
 ) -> dict:
-    """Step 1 — language picker. Only shows languages the user is allowed to edit."""
+    """Step 1 — language + locale picker."""
     if allowed_languages is None:
         allowed_languages = [key for key, _ in ALL_LANGUAGES]
 
@@ -40,9 +73,10 @@ def build_initial_modal(
         "close":  {"type": "plain_text", "text": "Cancel"},
         "blocks": [
             {
-                "type": "input",
-                "block_id": "language_block",
-                "label": {"type": "plain_text", "text": "Language"},
+                "type":            "input",
+                "block_id":        "language_block",
+                "dispatch_action": True,
+                "label":           {"type": "plain_text", "text": "Language"},
                 "element": {
                     "type":        "static_select",
                     "action_id":   "language_select",
@@ -51,9 +85,22 @@ def build_initial_modal(
                 },
             },
             {
+                "type":            "input",
+                "block_id":        "locale_block",
+                "dispatch_action": True,
+                "label":           {"type": "plain_text", "text": "Country / Locale"},
+                "element": {
+                    "type":           "static_select",
+                    "action_id":      "locale_select",
+                    "placeholder":    {"type": "plain_text", "text": "Select a country"},
+                    "options":        _locale_options(),
+                    "initial_option": _locale_initial_option(DEFAULT_LOCALE),
+                },
+            },
+            {
                 "type": "section",
                 "block_id": "module_placeholder_block",
-                "text": {"type": "mrkdwn", "text": "_Select a language above to load modules._"},
+                "text": {"type": "mrkdwn", "text": "_Select a language and country above to load modules._"},
             },
         ],
     }
@@ -63,9 +110,10 @@ def build_modal_with_modules(
     modules: list[dict],
     private_metadata: str = "{}",
     selected_language: str = "",
+    selected_locale: str = DEFAULT_LOCALE,
     allowed_languages: Optional[list[str]] = None,
 ) -> dict:
-    """Step 2 — language chosen, module dropdown populated."""
+    """Step 2 — language + locale chosen, module dropdown populated."""
     if allowed_languages is None:
         allowed_languages = [key for key, _ in ALL_LANGUAGES]
 
@@ -86,9 +134,10 @@ def build_modal_with_modules(
         "close":  {"type": "plain_text", "text": "Cancel"},
         "blocks": [
             {
-                "type": "input",
-                "block_id": "language_block",
-                "label": {"type": "plain_text", "text": "Language"},
+                "type":            "input",
+                "block_id":        "language_block",
+                "dispatch_action": True,
+                "label":           {"type": "plain_text", "text": "Language"},
                 "element": {
                     "type":           "static_select",
                     "action_id":      "language_select",
@@ -98,9 +147,23 @@ def build_modal_with_modules(
                 },
             },
             {
-                "type": "input",
-                "block_id": "module_block",
-                "label": {"type": "plain_text", "text": "Module"},
+                "type":            "input",
+                "block_id":        "locale_block",
+                "dispatch_action": True,
+                "label":           {"type": "plain_text", "text": "Country / Locale"},
+                "element": {
+                    "type":           "static_select",
+                    "action_id":      "locale_select",
+                    "placeholder":    {"type": "plain_text", "text": "Select a country"},
+                    "options":        _locale_options(),
+                    "initial_option": _locale_initial_option(selected_locale),
+                },
+            },
+            {
+                "type":            "input",
+                "block_id":        "module_block",
+                "dispatch_action": True,
+                "label":           {"type": "plain_text", "text": "Module"},
                 "element": {
                     "type":        "static_select",
                     "action_id":   "module_select",
@@ -122,6 +185,7 @@ def build_modal_with_shows(
     current_show_ids: list[str],
     private_metadata: str = "{}",
     selected_language: str = "",
+    selected_locale: str = DEFAULT_LOCALE,
     selected_module_id: str = "",
     selected_module_name: str = "",
     allowed_languages: Optional[list[str]] = None,
@@ -154,9 +218,10 @@ def build_modal_with_shows(
         "close":  {"type": "plain_text", "text": "Cancel"},
         "blocks": [
             {
-                "type": "input",
-                "block_id": "language_block",
-                "label": {"type": "plain_text", "text": "Language"},
+                "type":            "input",
+                "block_id":        "language_block",
+                "dispatch_action": True,
+                "label":           {"type": "plain_text", "text": "Language"},
                 "element": {
                     "type":           "static_select",
                     "action_id":      "language_select",
@@ -165,9 +230,22 @@ def build_modal_with_shows(
                 },
             },
             {
-                "type": "input",
-                "block_id": "module_block",
-                "label": {"type": "plain_text", "text": "Module"},
+                "type":            "input",
+                "block_id":        "locale_block",
+                "dispatch_action": True,
+                "label":           {"type": "plain_text", "text": "Country / Locale"},
+                "element": {
+                    "type":           "static_select",
+                    "action_id":      "locale_select",
+                    "options":        _locale_options(),
+                    "initial_option": _locale_initial_option(selected_locale),
+                },
+            },
+            {
+                "type":            "input",
+                "block_id":        "module_block",
+                "dispatch_action": True,
+                "label":           {"type": "plain_text", "text": "Module"},
                 "element": {
                     "type":           "static_select",
                     "action_id":      "module_select",

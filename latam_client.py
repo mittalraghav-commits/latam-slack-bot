@@ -20,15 +20,15 @@ def _parse_entities(raw_entities) -> list[str]:
     return [list(item.keys())[0] for item in sorted_items]
 
 
-async def get_modules(language: str) -> list[dict]:
+async def get_modules(language: str, locale: str = "MX") -> list[dict]:
     """
-    Fetch all modules for a language. Each module already includes its 'entities'.
-    GET /latam_modules?language={language}&locale=IN
+    Fetch all modules for a language + locale.
+    GET /latam_modules?language={language}&locale={locale}
     """
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             f"{BASE_URL}/latam_modules",
-            params={"language": language, "locale": "IN"},
+            params={"language": language, "locale": locale},
             headers=HEADERS,
         )
         resp.raise_for_status()

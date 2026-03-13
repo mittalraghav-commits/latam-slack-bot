@@ -1,6 +1,7 @@
 import json
 import asyncio
 import logging
+from typing import Optional
 
 from slack_bolt import App
 from slack_bolt.adapter.fastapi import SlackRequestHandler
@@ -8,7 +9,7 @@ from fastapi import FastAPI, Request
 
 from config import SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET
 from latam_client import get_modules, get_shows_from_module, get_module_shows, update_module
-from modals import build_initial_modal, build_modal_with_modules, build_modal_with_shows
+from modals import build_initial_modal, build_modal_with_modules, build_modal_with_shows, DEFAULT_LOCALE
 from roles import get_allowed_languages, assert_authorized_for_language, invalidate_cache, UnauthorizedError
 from audit import post_audit_log
 
@@ -52,6 +53,20 @@ def open_modal(ack, command, client):
 
 # ── 2. Language selected — load modules ────────────────────────────────────────
 
+def _get_locale_from_state(view_state: dict) -> str:
+    try:
+        return view_state["locale_block"]["locale_select"]["selected_option"]["value"]
+    except (KeyError, TypeError):
+        return DEFAULT_LOCALE
+
+
+def _get_language_from_state(view_state: dict) -> Optional[str]:
+    try:
+        return view_state["language_block"]["language_select"]["selected_option"]["value"]
+    except (KeyError, TypeError):
+        return None
+
+
 @bolt_app.action("language_select")
 def on_language_selected(ack, body, client):
     ack()
@@ -60,8 +75,9 @@ def on_language_selected(ack, body, client):
     hash_             = body["view"]["hash"]
     metadata          = json.loads(body["view"].get("private_metadata", "{}"))
     allowed_languages = metadata.get("allowed_languages")
+    locale            = _get_locale_from_state(body["view"]["state"]["values"])
 
-    modules = loop.run_until_complete(get_modules(language))
+    modules = loop.run_until_complete(get_modules(language, locale))
 
     client.views_update(
         view_id=view_id,
@@ -70,6 +86,35 @@ def on_language_selected(ack, body, client):
             modules,
             private_metadata=json.dumps(metadata),
             selected_language=language,
+            selected_locale=locale,
+            allowed_languages=allowed_languages,
+        ),
+    )
+
+
+@bolt_app.action("locale_select")
+def on_locale_selected(ack, body, client):
+    ack()
+    locale            = body["actions"][0]["selected_option"]["value"]
+    view_id           = body["view"]["id"]
+    hash_             = body["view"]["hash"]
+    metadata          = json.loads(body["view"].get("private_metadata", "{}"))
+    allowed_languages = metadata.get("allowed_languages")
+    language          = _get_language_from_state(body["view"]["state"]["values"])
+
+    if not language:
+        return  # language not selected yet, wait
+
+    modules = loop.run_until_complete(get_modules(language, locale))
+
+    client.views_update(
+        view_id=view_id,
+        hash=hash_,
+        view=build_modal_with_modules(
+            modules,
+            private_metadata=json.dumps(metadata),
+            selected_language=language,
+            selected_locale=locale,
             allowed_languages=allowed_languages,
         ),
     )
@@ -87,12 +132,13 @@ def on_module_selected(ack, body, client):
     values            = body["view"]["state"]["values"]
 
     language      = values["language_block"]["language_select"]["selected_option"]["value"]
+    locale        = _get_locale_from_state(values)
     module_option = body["actions"][0]["selected_option"]
     module_id     = module_option["value"]
     module_name   = module_option["text"]["text"]
 
-    modules          = loop.run_until_complete(get_modules(language))
-    current_show_ids = loop.run_until_complete(get_module_shows(module_id))  # fresh data from individual endpoint
+    modules          = loop.run_until_complete(get_modules(language, locale))
+    current_show_ids = loop.run_until_complete(get_module_shows(module_id))
 
     client.views_update(
         view_id=view_id,
@@ -102,6 +148,7 @@ def on_module_selected(ack, body, client):
             current_show_ids,
             private_metadata=json.dumps(metadata),
             selected_language=language,
+            selected_locale=locale,
             selected_module_id=module_id,
             selected_module_name=module_name,
             allowed_languages=allowed_languages,

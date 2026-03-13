@@ -31,11 +31,11 @@ def serve_demo():
 
 
 @app.get("/api/modules")
-async def get_modules(language: str):
+async def get_modules(language: str, locale: str = "MX"):
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             f"{BASE_URL}/latam_modules",
-            params={"language": language, "locale": "IN"},
+            params={"language": language, "locale": locale},
             headers=HEADERS,
         )
     if resp.status_code != 200:

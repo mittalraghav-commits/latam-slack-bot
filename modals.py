@@ -1,3 +1,5 @@
+from typing import Optional
+
 # Ordered list of all supported languages — (API key, display label)
 ALL_LANGUAGES = [
     ("fr",         "French (FR)"),
@@ -23,7 +25,7 @@ def _language_initial_option(language: str) -> dict:
 
 def build_initial_modal(
     private_metadata: str = "{}",
-    allowed_languages: list[str] | None = None,
+    allowed_languages: Optional[list[str]] = None,
 ) -> dict:
     """Step 1 — language picker. Only shows languages the user is allowed to edit."""
     if allowed_languages is None:
@@ -61,7 +63,7 @@ def build_modal_with_modules(
     modules: list[dict],
     private_metadata: str = "{}",
     selected_language: str = "",
-    allowed_languages: list[str] | None = None,
+    allowed_languages: Optional[list[str]] = None,
 ) -> dict:
     """Step 2 — language chosen, module dropdown populated."""
     if allowed_languages is None:
@@ -122,7 +124,7 @@ def build_modal_with_shows(
     selected_language: str = "",
     selected_module_id: str = "",
     selected_module_name: str = "",
-    allowed_languages: list[str] | None = None,
+    allowed_languages: Optional[list[str]] = None,
 ) -> dict:
     """Step 3 — module chosen. Shows current show list and the prefilled input."""
     if allowed_languages is None:

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LATAM Module Updater — Demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f4f4; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; padding: 40px 16px; }
+
+    .modal { background: #fff; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.18); width: 100%; max-width: 520px; overflow: hidden; }
+    .modal-header { background: #1d1c1d; color: #fff; padding: 20px 24px; font-size: 18px; font-weight: 700; }
+    .modal-body { padding: 24px; }
+    .modal-footer { padding: 16px 24px; border-top: 1px solid #e0e0e0; display: flex; justify-content: flex-end; gap: 10px; }
+
+    label { display: block; font-size: 13px; font-weight: 600; color: #1d1c1d; margin-bottom: 6px; margin-top: 18px; }
+    label:first-child { margin-top: 0; }
+
+    select, textarea {
+      width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 6px;
+      font-size: 14px; color: #1d1c1d; background: #fff; outline: none;
+      transition: border-color 0.15s;
+    }
+    select:focus, textarea:focus { border-color: #1264a3; box-shadow: 0 0 0 3px rgba(18,100,163,0.15); }
+    textarea { min-height: 160px; resize: vertical; font-family: monospace; font-size: 13px; }
+
+    .hint { font-size: 12px; color: #616061; margin-top: 5px; }
+
+    button {
+      padding: 10px 20px; border-radius: 6px; border: none; font-size: 14px;
+      font-weight: 600; cursor: pointer; transition: opacity 0.15s;
+    }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: #007a5a; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #148567; }
+    .btn-secondary { background: #e0e0e0; color: #1d1c1d; }
+    .btn-secondary:hover:not(:disabled) { background: #d0d0d0; }
+
+    .step-indicator { font-size: 12px; color: #616061; margin-bottom: 16px; }
+    .step-indicator span { font-weight: 700; color: #1d1c1d; }
+
+    .loading { color: #616061; font-size: 13px; padding: 8px 0; }
+    .error { color: #e01e5a; font-size: 13px; padding: 8px 0; }
+    .success { color: #007a5a; font-size: 13px; padding: 10px 14px; background: #e6f7f2; border-radius: 6px; margin-top: 12px; }
+
+    .show-count { font-size: 12px; color: #616061; margin-top: 4px; }
+
+    .tag { display: inline-block; background: #f4f4f4; border: 1px solid #e0e0e0; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-family: monospace; margin: 2px; }
+  </style>
+</head>
+<body>
+<div class="modal">
+  <div class="modal-header">✏️ &nbsp;Update LATAM Module</div>
+  <div class="modal-body" id="modal-body">
+
+    <!-- Step 1: Language -->
+    <div id="step1">
+      <div class="step-indicator">Step <span>1</span> of 3</div>
+      <label for="language">Language</label>
+      <select id="language">
+        <option value="">— Select a language —</option>
+        <option value="fr">French (FR)</option>
+        <option value="german">German (DE)</option>
+        <option value="spanish">Spanish (ES)</option>
+        <option value="portuguese">Portuguese (BR)</option>
+      </select>
+      <p class="hint">Choose the language whose modules you want to update.</p>
+    </div>
+
+    <!-- Step 2: Module (hidden until language chosen) -->
+    <div id="step2" style="display:none">
+      <div class="step-indicator">Step <span>2</span> of 3</div>
+      <label id="lang-label">Language</label>
+      <select id="language-display" disabled></select>
+
+      <label for="module">Module</label>
+      <div id="module-loading" class="loading">Loading modules…</div>
+      <select id="module" style="display:none"></select>
+      <p class="hint" id="module-hint" style="display:none">Select the module you want to update.</p>
+    </div>
+
+    <!-- Step 3: Shows (hidden until module chosen) -->
+    <div id="step3" style="display:none">
+      <div class="step-indicator">Step <span>3</span> of 3</div>
+      <label id="lang-label2">Language</label>
+      <select id="language-display2" disabled></select>
+      <label id="module-label2">Module</label>
+      <select id="module-display2" disabled></select>
+
+      <label for="shows">Show IDs (one per line)</label>
+      <textarea id="shows" placeholder="show_id_1&#10;show_id_2&#10;show_id_3"></textarea>
+      <p class="show-count" id="show-count"></p>
+      <p class="hint">Edit the list — order matters. Each line is one show ID.</p>
+
+      <div id="submit-result"></div>
+    </div>
+
+    <div id="global-error" class="error" style="display:none"></div>
+  </div>
+
+  <div class="modal-footer">
+    <button class="btn-secondary" id="btn-back" style="display:none" onclick="goBack()">Back</button>
+    <button class="btn-primary" id="btn-next" onclick="goNext()" disabled>Next</button>
+  </div>
+</div>
+
+<script>
+  const API = '';  // same origin
+  let state = { step: 1, language: '', moduleName: '', moduleId: '', modules: [] };
+
+  const $ = id => document.getElementById(id);
+
+  // ── Step 1 ──────────────────────────────────────────────────────────────────
+  $('language').addEventListener('change', () => {
+    $('btn-next').disabled = !$('language').value;
+  });
+
+  // ── Navigation ───────────────────────────────────────────────────────────────
+  async function goNext() {
+    if (state.step === 1) await toStep2();
+    else if (state.step === 2) await toStep3();
+    else if (state.step === 3) await submitUpdate();
+  }
+
+  function goBack() {
+    if (state.step === 2) toStep1();
+    else if (state.step === 3) toStep2Restore();
+  }
+
+  // ── Step 1 → 2 ──────────────────────────────────────────────────────────────
+  async function toStep2() {
+    state.language = $('language').value;
+    const langLabel = $('language').options[$('language').selectedIndex].text;
+
+    $('step1').style.display = 'none';
+    $('step2').style.display = 'block';
+    $('btn-back').style.display = 'inline-block';
+    $('btn-next').disabled = true;
+
+    // Show selected language as read-only
+    $('language-display').innerHTML = `<option>${langLabel}</option>`;
+    $('lang-label').textContent = 'Language';
+
+    // Load modules
+    $('module-loading').style.display = 'block';
+    $('module').style.display = 'none';
+    $('module-hint').style.display = 'none';
+    $('global-error').style.display = 'none';
+
+    try {
+      const resp = await fetch(`${API}/api/modules?language=${state.language}`);
+      if (!resp.ok) throw new Error(`API error ${resp.status}`);
+      const data = await resp.json();
+      state.modules = data.data || [];
+
+      $('module-loading').style.display = 'none';
+      $('module').style.display = 'block';
+      $('module-hint').style.display = 'block';
+
+      $('module').innerHTML = '<option value="">— Select a module —</option>' +
+        state.modules.map(m => {
+          const name = m.module_name || m.name || m.module_id;
+          return `<option value="${m.module_id}">${name}</option>`;
+        }).join('');
+
+      $('module').addEventListener('change', () => {
+        $('btn-next').disabled = !$('module').value;
+      });
+
+      state.step = 2;
+    } catch (err) {
+      $('module-loading').style.display = 'none';
+      $('global-error').textContent = `Failed to load modules: ${err.message}`;
+      $('global-error').style.display = 'block';
+      $('btn-back').style.display = 'inline-block';
+    }
+  }
+
+  function toStep1() {
+    state.step = 1;
+    $('step2').style.display = 'none';
+    $('step3').style.display = 'none';
+    $('step1').style.display = 'block';
+    $('btn-back').style.display = 'none';
+    $('btn-next').textContent = 'Next';
+    $('btn-next').disabled = !$('language').value;
+    $('global-error').style.display = 'none';
+  }
+
+  // ── Step 2 → 3 ──────────────────────────────────────────────────────────────
+  async function toStep3() {
+    const sel = $('module');
+    state.moduleId = sel.value;
+    state.moduleName = sel.options[sel.selectedIndex].text;
+
+    $('step2').style.display = 'none';
+    $('step3').style.display = 'block';
+    $('btn-next').textContent = 'Submit';
+    $('btn-next').disabled = false;
+    $('submit-result').innerHTML = '';
+
+    // Fill read-only fields
+    const langLabel = $('language-display').options[0].text;
+    $('language-display2').innerHTML = `<option>${langLabel}</option>`;
+    $('module-display2').innerHTML = `<option>${state.moduleName}</option>`;
+
+    // Fetch fresh shows from individual module endpoint
+    let showIds = [];
+    try {
+      const resp = await fetch(`${API}/api/module?module_id=${state.moduleId}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        const raw = data.data?.entities;
+        if (raw) {
+          const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+          const sorted = parsed.sort((a, b) => Object.values(a)[0] - Object.values(b)[0]);
+          showIds = sorted.map(item => Object.keys(item)[0]);
+        }
+      }
+    } catch(e) {}
+
+    $('shows').value = showIds.join('\n');
+    updateShowCount();
+    $('shows').addEventListener('input', updateShowCount);
+
+    state.step = 3;
+  }
+
+  function toStep2Restore() {
+    state.step = 2;
+    $('step3').style.display = 'none';
+    $('step2').style.display = 'block';
+    $('btn-next').textContent = 'Next';
+    $('btn-next').disabled = !$('module').value;
+    $('submit-result').innerHTML = '';
+  }
+
+  // ── Submit ───────────────────────────────────────────────────────────────────
+  async function submitUpdate() {
+    const showIds = $('shows').value.split('\n').map(s => s.trim()).filter(Boolean);
+    $('btn-next').disabled = true;
+    $('submit-result').innerHTML = '<span class="loading">Submitting…</span>';
+
+    try {
+      const resp = await fetch(`${API}/api/modules`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language: state.language, module_id: state.moduleId, show_ids: showIds }),
+      });
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(`API error ${resp.status}: ${txt}`);
+      }
+      $('submit-result').innerHTML = `<div class="success">✅ Module <strong>${state.moduleName}</strong> updated successfully with ${showIds.length} shows.</div>`;
+    } catch (err) {
+      $('submit-result').innerHTML = `<span class="error">❌ ${err.message}</span>`;
+    }
+    $('btn-next').disabled = false;
+  }
+
+  function updateShowCount() {
+    const count = $('shows').value.split('\n').filter(s => s.trim()).length;
+    $('show-count').textContent = `${count} show${count !== 1 ? 's' : ''}`;
+  }
+</script>
+</body>
+</html>

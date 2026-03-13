@@ -92,7 +92,7 @@ def on_module_selected(ack, body, client):
     module_name   = module_option["text"]["text"]
 
     modules          = loop.run_until_complete(get_modules(language))
-    current_show_ids = get_shows_from_module(modules, module_id)  # no extra API call
+    current_show_ids = loop.run_until_complete(get_module_shows(module_id))  # fresh data from individual endpoint
 
     client.views_update(
         view_id=view_id,

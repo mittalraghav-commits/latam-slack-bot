@@ -34,6 +34,8 @@
     .btn-primary:hover:not(:disabled) { background: #148567; }
     .btn-secondary { background: #e0e0e0; color: #1d1c1d; }
     .btn-secondary:hover:not(:disabled) { background: #d0d0d0; }
+    .btn-danger { background: #e01e5a; color: #fff; }
+    .btn-danger:hover:not(:disabled) { background: #c4174e; }
 
     .step-indicator { font-size: 12px; color: #616061; margin-bottom: 16px; }
     .step-indicator span { font-weight: 700; color: #1d1c1d; }
@@ -43,21 +45,36 @@
     .success { color: #007a5a; font-size: 13px; padding: 10px 14px; background: #e6f7f2; border-radius: 6px; margin-top: 12px; }
 
     .show-count { font-size: 12px; color: #616061; margin-top: 4px; }
+    .current-shows { background: #f8f8f8; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px 16px; margin-top: 10px; font-size: 13px; }
+    .current-shows ol { padding-left: 20px; margin-top: 6px; }
+    .current-shows li { font-family: monospace; font-size: 12px; padding: 2px 0; color: #333; }
+    .current-shows-title { font-weight: 600; color: #1d1c1d; }
 
-    .tag { display: inline-block; background: #f4f4f4; border: 1px solid #e0e0e0; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-family: monospace; margin: 2px; }
+    .op-card {
+      border: 2px solid #e0e0e0; border-radius: 8px; padding: 14px 16px;
+      margin-top: 10px; cursor: pointer; transition: all 0.15s;
+    }
+    .op-card:hover { border-color: #1264a3; background: #f0f7ff; }
+    .op-card.selected { border-color: #1264a3; background: #e8f2fc; }
+    .op-card-title { font-size: 14px; font-weight: 600; color: #1d1c1d; }
+    .op-card-desc { font-size: 12px; color: #616061; margin-top: 2px; }
+
+    .divider { border-top: 1px solid #e0e0e0; margin: 18px 0; }
+
+    .readonly-field { background: #f4f4f4; padding: 8px 12px; border-radius: 6px; font-size: 13px; color: #616061; border: 1px solid #e0e0e0; margin-top: 6px; }
   </style>
 </head>
 <body>
 <div class="modal">
-  <div class="modal-header">✏️ &nbsp;Update LATAM Module</div>
+  <div class="modal-header">&#9999;&#65039; &nbsp;Update LATAM Module</div>
   <div class="modal-body" id="modal-body">
 
-    <!-- Step 1: Language -->
+    <!-- Step 1: Language + Locale -->
     <div id="step1">
-      <div class="step-indicator">Step <span>1</span> of 3</div>
+      <div class="step-indicator">Step <span>1</span> of 4</div>
       <label for="language">Language</label>
       <select id="language">
-        <option value="">— Select a language —</option>
+        <option value="">Select a language</option>
         <option value="fr">French (FR)</option>
         <option value="german">German (DE)</option>
         <option value="spanish">Spanish (ES)</option>
@@ -84,30 +101,61 @@
       <p class="hint">Choose the language and country whose modules you want to update.</p>
     </div>
 
-    <!-- Step 2: Module (hidden until language chosen) -->
+    <!-- Step 2: Module -->
     <div id="step2" style="display:none">
-      <div class="step-indicator">Step <span>2</span> of 3</div>
-      <label id="lang-label">Language</label>
-      <select id="language-display" disabled></select>
-
+      <div class="step-indicator">Step <span>2</span> of 4</div>
+      <label>Language / Country</label>
+      <div class="readonly-field" id="lang-readonly"></div>
       <label for="module">Module</label>
-      <div id="module-loading" class="loading">Loading modules…</div>
+      <div id="module-loading" class="loading">Loading modules...</div>
       <select id="module" style="display:none"></select>
       <p class="hint" id="module-hint" style="display:none">Select the module you want to update.</p>
     </div>
 
-    <!-- Step 3: Shows (hidden until module chosen) -->
+    <!-- Step 3: Operation Picker -->
     <div id="step3" style="display:none">
-      <div class="step-indicator">Step <span>3</span> of 3</div>
-      <label id="lang-label2">Language</label>
-      <select id="language-display2" disabled></select>
-      <label id="module-label2">Module</label>
-      <select id="module-display2" disabled></select>
+      <div class="step-indicator">Step <span>3</span> of 4</div>
+      <label>Language / Country</label>
+      <div class="readonly-field" id="lang-readonly2"></div>
+      <label>Module</label>
+      <div class="readonly-field" id="module-readonly"></div>
 
-      <label for="shows">Show IDs (one per line)</label>
-      <textarea id="shows" placeholder="show_id_1&#10;show_id_2&#10;show_id_3"></textarea>
+      <div id="current-shows-preview" class="current-shows" style="display:none"></div>
+
+      <div class="divider"></div>
+      <label style="margin-top:0">What do you want to do?</label>
+
+      <div class="op-card" data-op="remove" onclick="selectOp('remove')">
+        <div class="op-card-title">&#10134; Remove shows</div>
+        <div class="op-card-desc">Remove one or more shows from this module</div>
+      </div>
+      <div class="op-card" data-op="add" onclick="selectOp('add')">
+        <div class="op-card-title">&#10133; Add shows</div>
+        <div class="op-card-desc">Add new shows to the end of this module</div>
+      </div>
+      <div class="op-card" data-op="rerank" onclick="selectOp('rerank')">
+        <div class="op-card-title">&#128290; Re-rank shows</div>
+        <div class="op-card-desc">Change the order of shows in this module</div>
+      </div>
+    </div>
+
+    <!-- Step 4: Action Input -->
+    <div id="step4" style="display:none">
+      <div class="step-indicator">Step <span>4</span> of 4</div>
+      <label>Language / Country</label>
+      <div class="readonly-field" id="lang-readonly3"></div>
+      <label>Module</label>
+      <div class="readonly-field" id="module-readonly2"></div>
+
+      <div id="current-shows-preview2" class="current-shows" style="display:none"></div>
+
+      <div class="divider"></div>
+
+      <div id="op-instruction"></div>
+
+      <label id="input-label" for="shows">Show IDs</label>
+      <textarea id="shows" placeholder=""></textarea>
       <p class="show-count" id="show-count"></p>
-      <p class="hint">Edit the list — order matters. Each line is one show ID.</p>
 
       <div id="submit-result"></div>
     </div>
@@ -122,32 +170,36 @@
 </div>
 
 <script>
-  const API = '';  // same origin
-  let state = { step: 1, language: '', locale: 'MX', moduleName: '', moduleId: '', modules: [] };
+  const API = '';
+  let state = {
+    step: 1,
+    language: '', locale: 'MX',
+    moduleName: '', moduleId: '',
+    modules: [], currentShows: [],
+    operation: '',
+  };
 
   const $ = id => document.getElementById(id);
 
-  // ── Step 1 ──────────────────────────────────────────────────────────────────
+  // ── Step 1 listeners ────────────────────────────────────────────────────────
   $('language').addEventListener('change', () => {
     $('btn-next').disabled = !$('language').value;
   });
-  $('locale').addEventListener('change', () => {
-    // no-op: locale can always be changed, btn-next gated on language
-  });
 
-  // ── Navigation ───────────────────────────────────────────────────────────────
+  // ── Navigation ──────────────────────────────────────────────────────────────
   async function goNext() {
     if (state.step === 1) await toStep2();
     else if (state.step === 2) await toStep3();
-    else if (state.step === 3) await submitUpdate();
+    else if (state.step === 4) await submitUpdate();
   }
 
   function goBack() {
     if (state.step === 2) toStep1();
     else if (state.step === 3) toStep2Restore();
+    else if (state.step === 4) toStep3Restore();
   }
 
-  // ── Step 1 → 2 ──────────────────────────────────────────────────────────────
+  // ── Step 1 → 2 : Load modules ──────────────────────────────────────────────
   async function toStep2() {
     state.language = $('language').value;
     state.locale   = $('locale').value;
@@ -158,12 +210,8 @@
     $('step2').style.display = 'block';
     $('btn-back').style.display = 'inline-block';
     $('btn-next').disabled = true;
+    $('lang-readonly').textContent = `${langLabel} — ${localeLabel}`;
 
-    // Show selected language + locale as read-only
-    $('language-display').innerHTML = `<option>${langLabel} — ${localeLabel}</option>`;
-    $('lang-label').textContent = 'Language / Country';
-
-    // Load modules
     $('module-loading').style.display = 'block';
     $('module').style.display = 'none';
     $('module-hint').style.display = 'none';
@@ -179,29 +227,24 @@
       $('module').style.display = 'block';
       $('module-hint').style.display = 'block';
 
-      $('module').innerHTML = '<option value="">— Select a module —</option>' +
+      $('module').innerHTML = '<option value="">Select a module</option>' +
         state.modules.map(m => {
           const name = m.module_name || m.name || m.module_id;
           return `<option value="${m.module_id}">${name}</option>`;
         }).join('');
 
-      $('module').addEventListener('change', () => {
-        $('btn-next').disabled = !$('module').value;
-      });
-
+      $('module').onchange = () => { $('btn-next').disabled = !$('module').value; };
       state.step = 2;
     } catch (err) {
       $('module-loading').style.display = 'none';
       $('global-error').textContent = `Failed to load modules: ${err.message}`;
       $('global-error').style.display = 'block';
-      $('btn-back').style.display = 'inline-block';
     }
   }
 
   function toStep1() {
     state.step = 1;
     $('step2').style.display = 'none';
-    $('step3').style.display = 'none';
     $('step1').style.display = 'block';
     $('btn-back').style.display = 'none';
     $('btn-next').textContent = 'Next';
@@ -209,24 +252,24 @@
     $('global-error').style.display = 'none';
   }
 
-  // ── Step 2 → 3 ──────────────────────────────────────────────────────────────
+  // ── Step 2 → 3 : Fetch shows + pick operation ──────────────────────────────
   async function toStep3() {
     const sel = $('module');
-    state.moduleId = sel.value;
+    state.moduleId   = sel.value;
     state.moduleName = sel.options[sel.selectedIndex].text;
 
     $('step2').style.display = 'none';
     $('step3').style.display = 'block';
-    $('btn-next').textContent = 'Submit';
-    $('btn-next').disabled = false;
-    $('submit-result').innerHTML = '';
+    $('btn-next').disabled = true;
+    $('btn-next').textContent = 'Next';
+    state.operation = '';
+    document.querySelectorAll('.op-card').forEach(c => c.classList.remove('selected'));
 
-    // Fill read-only fields
-    const langLabel = $('language-display').options[0].text;
-    $('language-display2').innerHTML = `<option>${langLabel}</option>`;
-    $('module-display2').innerHTML = `<option>${state.moduleName}</option>`;
+    const langText = $('lang-readonly').textContent;
+    $('lang-readonly2').textContent = langText;
+    $('module-readonly').textContent = state.moduleName;
 
-    // Fetch fresh shows from individual module endpoint
+    // Fetch current shows
     let showIds = [];
     try {
       const resp = await fetch(`${API}/api/module?module_id=${state.moduleId}`);
@@ -241,9 +284,17 @@
       }
     } catch(e) {}
 
-    $('shows').value = showIds.join('\n');
-    updateShowCount();
-    $('shows').addEventListener('input', updateShowCount);
+    state.currentShows = showIds;
+
+    // Render current shows preview
+    const preview = $('current-shows-preview');
+    if (showIds.length) {
+      preview.innerHTML = `<div class="current-shows-title">Current shows (${showIds.length}):</div><ol>${showIds.map(s => `<li>${s}</li>`).join('')}</ol>`;
+      preview.style.display = 'block';
+    } else {
+      preview.innerHTML = '<div class="current-shows-title">No shows currently assigned.</div>';
+      preview.style.display = 'block';
+    }
 
     state.step = 3;
   }
@@ -254,28 +305,144 @@
     $('step2').style.display = 'block';
     $('btn-next').textContent = 'Next';
     $('btn-next').disabled = !$('module').value;
-    $('submit-result').innerHTML = '';
   }
 
-  // ── Submit ───────────────────────────────────────────────────────────────────
+  // ── Operation selection ────────────────────────────────────────────────────
+  function selectOp(op) {
+    state.operation = op;
+    document.querySelectorAll('.op-card').forEach(c => {
+      c.classList.toggle('selected', c.dataset.op === op);
+    });
+    $('btn-next').disabled = false;
+
+    // Go directly to step 4
+    toStep4();
+  }
+
+  // ── Step 3 → 4 : Show targeted input ───────────────────────────────────────
+  function toStep4() {
+    $('step3').style.display = 'none';
+    $('step4').style.display = 'block';
+    $('btn-back').style.display = 'inline-block';
+    $('submit-result').innerHTML = '';
+
+    const langText = $('lang-readonly').textContent;
+    $('lang-readonly3').textContent = langText;
+    $('module-readonly2').textContent = state.moduleName;
+
+    // Show current shows for remove/add
+    const preview2 = $('current-shows-preview2');
+    if (state.operation !== 'rerank' && state.currentShows.length) {
+      preview2.innerHTML = `<div class="current-shows-title">Current shows (${state.currentShows.length}):</div><ol>${state.currentShows.map(s => `<li>${s}</li>`).join('')}</ol>`;
+      preview2.style.display = 'block';
+    } else {
+      preview2.style.display = 'none';
+    }
+
+    const inst = $('op-instruction');
+    const label = $('input-label');
+    const shows = $('shows');
+
+    if (state.operation === 'remove') {
+      $('btn-next').textContent = 'Remove & Update';
+      $('btn-next').className = 'btn-danger';
+      inst.innerHTML = '<p style="font-size:13px;color:#1d1c1d;font-weight:600;margin-bottom:4px">&#10134; Which shows do you want to remove?</p><p class="hint" style="margin-top:0">Enter one show ID per line.</p>';
+      label.textContent = 'Show IDs to remove';
+      shows.value = '';
+      shows.placeholder = 'showId1\nshowId2';
+    } else if (state.operation === 'add') {
+      $('btn-next').textContent = 'Add & Update';
+      $('btn-next').className = 'btn-primary';
+      inst.innerHTML = '<p style="font-size:13px;color:#1d1c1d;font-weight:600;margin-bottom:4px">&#10133; Which shows do you want to add?</p><p class="hint" style="margin-top:0">Enter one show ID per line. They will be appended to the end of the module.</p>';
+      label.textContent = 'Show IDs to add';
+      shows.value = '';
+      shows.placeholder = 'showId4\nshowId5';
+    } else if (state.operation === 'rerank') {
+      $('btn-next').textContent = 'Reorder & Update';
+      $('btn-next').className = 'btn-primary';
+      inst.innerHTML = '<p style="font-size:13px;color:#1d1c1d;font-weight:600;margin-bottom:4px">&#128290; Re-order the shows below</p><p class="hint" style="margin-top:0">Edit the list — one show ID per line, in your desired order. Must contain the same shows.</p>';
+      label.textContent = 'Shows in new order';
+      shows.value = state.currentShows.join('\n');
+      shows.placeholder = 'showId1\nshowId2\nshowId3';
+    }
+
+    $('btn-next').disabled = false;
+    updateShowCount();
+    shows.oninput = updateShowCount;
+    state.step = 4;
+  }
+
+  function toStep3Restore() {
+    state.step = 3;
+    $('step4').style.display = 'none';
+    $('step3').style.display = 'block';
+    $('btn-next').textContent = 'Next';
+    $('btn-next').className = 'btn-primary';
+    $('btn-next').disabled = !state.operation;
+  }
+
+  // ── Submit ──────────────────────────────────────────────────────────────────
   async function submitUpdate() {
-    const showIds = $('shows').value.split('\n').map(s => s.trim()).filter(Boolean);
+    const entered = $('shows').value.split('\n').map(s => s.trim()).filter(Boolean);
+
+    if (!entered.length) {
+      $('submit-result').innerHTML = '<span class="error">Please enter at least one show ID.</span>';
+      return;
+    }
+
+    // Compute new_show_ids
+    let newShowIds;
+    if (state.operation === 'remove') {
+      const notFound = entered.filter(s => !state.currentShows.includes(s));
+      if (notFound.length) {
+        $('submit-result').innerHTML = `<span class="error">These IDs are not in the module: ${notFound.join(', ')}</span>`;
+        return;
+      }
+      newShowIds = state.currentShows.filter(s => !entered.includes(s));
+      if (!newShowIds.length) {
+        $('submit-result').innerHTML = '<span class="error">Cannot remove all shows from a module.</span>';
+        return;
+      }
+    } else if (state.operation === 'add') {
+      const dupes = entered.filter(s => state.currentShows.includes(s));
+      if (dupes.length) {
+        $('submit-result').innerHTML = `<span class="error">Already in module: ${dupes.join(', ')}</span>`;
+        return;
+      }
+      newShowIds = [...state.currentShows, ...entered];
+    } else if (state.operation === 'rerank') {
+      const currentSet = new Set(state.currentShows);
+      const enteredSet = new Set(entered);
+      const missing = state.currentShows.filter(s => !enteredSet.has(s));
+      const extra = entered.filter(s => !currentSet.has(s));
+      if (missing.length || extra.length) {
+        let msg = 'Re-rank must contain exactly the same shows.';
+        if (missing.length) msg += ` Missing: ${missing.join(', ')}.`;
+        if (extra.length) msg += ` Unknown: ${extra.join(', ')}.`;
+        $('submit-result').innerHTML = `<span class="error">${msg}</span>`;
+        return;
+      }
+      newShowIds = entered;
+    }
+
     $('btn-next').disabled = true;
-    $('submit-result').innerHTML = '<span class="loading">Submitting…</span>';
+    $('submit-result').innerHTML = '<span class="loading">Submitting...</span>';
 
     try {
       const resp = await fetch(`${API}/api/modules`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ language: state.language, module_id: state.moduleId, show_ids: showIds }),
+        body: JSON.stringify({ language: state.language, module_id: state.moduleId, show_ids: newShowIds }),
       });
       if (!resp.ok) {
         const txt = await resp.text();
         throw new Error(`API error ${resp.status}: ${txt}`);
       }
-      $('submit-result').innerHTML = `<div class="success">✅ Module <strong>${state.moduleName}</strong> updated successfully with ${showIds.length} shows.</div>`;
+
+      const opLabel = { remove: 'Removed', add: 'Added', rerank: 'Reordered' }[state.operation];
+      $('submit-result').innerHTML = `<div class="success">&#9989; ${opLabel}! Module <strong>${state.moduleName}</strong> now has ${newShowIds.length} shows.</div>`;
     } catch (err) {
-      $('submit-result').innerHTML = `<span class="error">❌ ${err.message}</span>`;
+      $('submit-result').innerHTML = `<span class="error">&#10060; ${err.message}</span>`;
     }
     $('btn-next').disabled = false;
   }

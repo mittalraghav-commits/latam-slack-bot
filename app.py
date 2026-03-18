@@ -8,8 +8,19 @@ from slack_bolt.adapter.fastapi import SlackRequestHandler
 from fastapi import FastAPI, Request
 
 from config import SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET
-from latam_client import get_modules, get_shows_from_module, get_module_shows, update_module
-from modals import build_initial_modal, build_modal_with_modules, build_modal_with_shows, DEFAULT_LOCALE
+from latam_client import get_modules, get_module_shows, update_module
+from modals import (
+    build_initial_modal,
+    build_modal_with_modules,
+    build_modal_with_operation_select,
+    build_modal_for_remove,
+    build_modal_for_add,
+    build_modal_for_rerank,
+    DEFAULT_LOCALE,
+    OPERATION_REMOVE,
+    OPERATION_ADD,
+    OPERATION_RERANK,
+)
 from roles import get_allowed_languages, assert_authorized_for_language, invalidate_cache, UnauthorizedError
 from audit import post_audit_log
 
@@ -120,7 +131,7 @@ def on_locale_selected(ack, body, client):
     )
 
 
-# ── 3. Module selected — show current shows + pre-fill input ──────────────────
+# ── 3. Module selected — show current shows + operation picker ─────────────────
 
 @bolt_app.action("module_select")
 def on_module_selected(ack, body, client):
@@ -143,7 +154,7 @@ def on_module_selected(ack, body, client):
     client.views_update(
         view_id=view_id,
         hash=hash_,
-        view=build_modal_with_shows(
+        view=build_modal_with_operation_select(
             modules,
             current_show_ids,
             private_metadata=json.dumps(metadata),
@@ -156,7 +167,55 @@ def on_module_selected(ack, body, client):
     )
 
 
-# ── 4. Modal submitted — validate, update, post audit log ─────────────────────
+# ── 4. Operation selected — show targeted input UI ─────────────────────────────
+
+_OPERATION_BUILDERS = {
+    OPERATION_REMOVE: build_modal_for_remove,
+    OPERATION_ADD:    build_modal_for_add,
+    OPERATION_RERANK: build_modal_for_rerank,
+}
+
+
+@bolt_app.action("operation_select")
+def on_operation_selected(ack, body, client):
+    ack()
+    operation         = body["actions"][0]["selected_option"]["value"]
+    view_id           = body["view"]["id"]
+    hash_             = body["view"]["hash"]
+    metadata          = json.loads(body["view"].get("private_metadata", "{}"))
+    allowed_languages = metadata.get("allowed_languages")
+    values            = body["view"]["state"]["values"]
+
+    language      = values["language_block"]["language_select"]["selected_option"]["value"]
+    locale        = _get_locale_from_state(values)
+    module_option = values["module_block"]["module_select"]["selected_option"]
+    module_id     = module_option["value"]
+    module_name   = module_option["text"]["text"]
+
+    build_fn = _OPERATION_BUILDERS.get(operation)
+    if not build_fn:
+        return
+
+    modules          = loop.run_until_complete(get_modules(language, locale))
+    current_show_ids = loop.run_until_complete(get_module_shows(module_id))
+
+    client.views_update(
+        view_id=view_id,
+        hash=hash_,
+        view=build_fn(
+            modules,
+            current_show_ids,
+            private_metadata=json.dumps(metadata),
+            selected_language=language,
+            selected_locale=locale,
+            selected_module_id=module_id,
+            selected_module_name=module_name,
+            allowed_languages=allowed_languages,
+        ),
+    )
+
+
+# ── 5. Modal submitted — validate, compute new list, update, post audit log ────
 
 @bolt_app.view("latam_module_update")
 def on_submit(ack, body, client, view):
@@ -167,33 +226,39 @@ def on_submit(ack, body, client, view):
     language    = values["language_block"]["language_select"]["selected_option"]["value"]
     module_id   = values["module_block"]["module_select"]["selected_option"]["value"]
     module_name = values["module_block"]["module_select"]["selected_option"]["text"]["text"]
-    raw_input   = values["show_ids_block"]["show_ids_input"]["value"].strip()
 
     user_id   = body["user"]["id"]
     user_name = body["user"]["name"]
 
-    # Re-check authorization for this specific language on submit (defence in depth)
+    # Re-check authorization (defence in depth)
     try:
         assert_authorized_for_language(client, user_id, language)
     except UnauthorizedError:
         ack(response_action="errors", errors={
-            "show_ids_block": f"You don't have permission to update {language} modules."
+            "language_block": f"You don't have permission to update {language} modules."
         })
         return
 
-    # Validate show_ids format
-    try:
-        new_show_ids = json.loads(raw_input)
-        if not isinstance(new_show_ids, list) or not all(isinstance(s, str) for s in new_show_ids):
-            raise ValueError
-        if len(new_show_ids) == 0:
-            raise ValueError
-    except (json.JSONDecodeError, ValueError):
+    # Read operation
+    operation_opt = (
+        values.get("operation_block", {})
+              .get("operation_select", {})
+              .get("selected_option")
+    )
+    if not operation_opt:
         ack(response_action="errors", errors={
-            "show_ids_block": (
-                'Must be a non-empty JSON array of strings.\n'
-                'Example: ["showId1", "showId2", "showId3"]'
-            )
+            "operation_block": "Please select what you want to do."
+        })
+        return
+    operation = operation_opt["value"]
+
+    # Read and parse entered show IDs (one per line)
+    raw_input  = (values.get("show_ids_block", {}).get("show_ids_input", {}).get("value") or "").strip()
+    entered_ids = [line.strip() for line in raw_input.splitlines() if line.strip()]
+
+    if not entered_ids:
+        ack(response_action="errors", errors={
+            "show_ids_block": "Please enter at least one show ID."
         })
         return
 
@@ -201,6 +266,59 @@ def on_submit(ack, body, client, view):
 
     try:
         previous_show_ids = loop.run_until_complete(get_module_shows(module_id))
+
+        if operation == OPERATION_REMOVE:
+            not_found = [s for s in entered_ids if s not in previous_show_ids]
+            if not_found:
+                client.chat_postEphemeral(
+                    channel=channel_id, user=user_id,
+                    text=(
+                        ":x: *Update failed:* These show IDs are not in the module:\n"
+                        + "\n".join(f"• `{s}`" for s in not_found)
+                    ),
+                )
+                return
+            new_show_ids = [s for s in previous_show_ids if s not in entered_ids]
+            if not new_show_ids:
+                client.chat_postEphemeral(
+                    channel=channel_id, user=user_id,
+                    text=":x: *Update cancelled:* Removing all shows from a module is not allowed.",
+                )
+                return
+
+        elif operation == OPERATION_ADD:
+            already_in = [s for s in entered_ids if s in previous_show_ids]
+            if already_in:
+                client.chat_postEphemeral(
+                    channel=channel_id, user=user_id,
+                    text=(
+                        ":x: *Update failed:* These show IDs are already in the module:\n"
+                        + "\n".join(f"• `{s}`" for s in already_in)
+                    ),
+                )
+                return
+
+            new_show_ids = previous_show_ids + entered_ids
+
+        elif operation == OPERATION_RERANK:
+            if set(entered_ids) != set(previous_show_ids):
+                missing = set(previous_show_ids) - set(entered_ids)
+                extra   = set(entered_ids) - set(previous_show_ids)
+                lines   = []
+                if missing:
+                    lines.append("Missing: " + ", ".join(f"`{s}`" for s in sorted(missing)))
+                if extra:
+                    lines.append("Unknown: " + ", ".join(f"`{s}`" for s in sorted(extra)))
+                client.chat_postEphemeral(
+                    channel=channel_id, user=user_id,
+                    text=":x: *Update failed:* Re-rank must contain exactly the same shows.\n" + "\n".join(lines),
+                )
+                return
+            new_show_ids = entered_ids
+
+        else:
+            return  # unknown operation, do nothing
+
         loop.run_until_complete(update_module(language, module_id, new_show_ids))
 
         post_audit_log(
